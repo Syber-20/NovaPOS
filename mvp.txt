@@ -1,0 +1,103 @@
+npm install firebase react-paystack
+```
+2. Create `src/firebase.js` with your Firebase config
+3. Enable **Email/Password** auth in Firebase Console → Authentication
+4. Create these Firestore collections manually in Firebase Console:
+   - `users`, `products`, `inventory`, `suppliers`, `sales`
+
+---
+
+**Phase 2 — Authentication**
+1. Rewrite `Login.jsx` to use `continueWithGoogle` from Firebase Auth for now
+2. Rewrite `AppContext.jsx` to use `onAuthStateChanged` for session management
+3. Store user roles in Firestore `users` collection
+4. Update `ProtectedRoute.jsx` to check Firestore role instead of localStorage
+---
+
+**Phase 3 — Data Layer**
+1. Replace all localStorage reads/writes in `AppContext.jsx` with Firestore `getDocs`, `addDoc`, `updateDoc`, `deleteDoc`
+2. Add real-time listeners with `onSnapshot` for inventory and sales so all users see live updates
+3. Seed your initial products and suppliers directly in Firestore Console
+
+---
+
+**Phase 4 — POS + Paystack**
+1. Add Paystack to the POS checkout flow
+2. Cash payment stays the same
+3. Mobile Money triggers Paystack popup
+4. On successful payment callback, call `processSale()` to record in Firestore
+
+---
+
+**Phase 5 — Pages (in order of priority)**
+
+| Order | Page | Why |
+|---|---|---|
+| 1 | Dashboard | First thing owner sees |
+| 2 | POS | Core cashier workflow |
+| 3 | Inventory | Critical for stock alerts |
+| 4 | Products | Manage catalog |
+| 5 | Suppliers | Restock management |
+| 6 | Analytics | Owner insights |
+| 7 | Reports | CSV exports |
+
+---
+
+**Phase 6 — Deployment**
+1. Add Firebase config as environment variables in Vercel dashboard
+2. Add Paystack public key as environment variable
+3. Push to GitHub → Vercel auto-deploys
+
+---
+
+**Firestore Data Structure to follow:**
+```
+users/{userId}
+  - name, email, role (owner/cashier/inventory)
+
+products/{productId}
+  - name, category, size, brand, price, costPrice, sku, supplierId
+
+inventory/{productId}
+  - quantity, lowStockThreshold, expiryDate
+
+suppliers/{supplierId}
+  - name, contact, phone, email, address
+
+sales/{saleId}
+  - date, cashierId, items[], total, paymentMethod, status
+
+  1. owner
+Permissions: Full access to all features in the application.
+Exclusive Access: Can view Suppliers, Analytics, and Reports.
+Navigation: Views all items in the sidebar.
+2. cashier
+Permissions: Focused on sales operations.
+Access: Can access the Dashboard and Point of Sale (POS).
+Restricted: Cannot access Inventory, Products, Suppliers, Analytics, or Reports.
+3. inventory
+Permissions: Focused on stock and catalog management.
+Access: Can access the Dashboard, Inventory, and Products.
+Restricted: Cannot access POS, Suppliers, Analytics, or Reports.
+4. customer
+Permissions: Default role for any new Google Sign-In.
+Access: Currently restricted to just the Dashboard (Store Overview).
+Note: This is a landing role to prevent unauthorized staff access by default. 
+You must manually upgrade a user to one of the above roles in the Firestore users collection to grant them staff permissions.
+1. Inventory Restocking
+
+The Suppliers page acts as your "Restock Command Center." It automatically identifies which products are running low and allows you to record new stock arrivals (e.g., when a delivery truck arrives with 50 boxes of diapers).
+
+2. Product Sourcing
+Every item in your Products catalog is linked to a specific supplier. This ensures you know exactly who to call when a specific brand (like Pampers or Huggies) is out of stock.
+
+3. Business Directory
+It stores essential contact details—Phone, Email, and Location—for your distributors. This means the store owner or inventory manager doesn't have to look for paper invoices or external contacts to place an order.
+
+4. Low-Stock Intelligence
+The system groups "Low Stock Alerts" by supplier. If multiple products from the same supplier are low, the system highlights them together so you can place one consolidated order instead of multiple small ones, saving on delivery costs.
+
+5. Cost & Profit Tracking
+By linking suppliers to the costPrice of products, the system can calculate your actual Profit Margins in your Reports and Analytics. It helps you see which suppliers are giving you the best margins.
+
+Current Status of Implementation: Right now, the system treats Suppliers as a "read-only" directory. My proposed changes will allow you to Add, Edit, and Delete these suppliers directly within the app, giving you full control over your distribution network.
