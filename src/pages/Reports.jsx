@@ -21,31 +21,39 @@ export default function Reports() {
       .sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [sales, selectedDays]);
 
-  // Low stock items
-  const lowStockItems = useMemo(() => {
-    return inventory
-      .filter(i => i.quantity <= i.lowStockThreshold)
-      .map(i => ({
-        ...i,
-        product: products.find(p => p.id === i.productId),
-      }))
-      .filter(i => i.product);
-  }, [inventory, products]);
+  // Profit & Loss Data
+  const plData = useMemo(() => {
+    const revenue = filteredSales.reduce((sum, s) => sum + s.total, 0);
+    const cost = filteredSales.reduce((sum, s) => {
+      return sum + s.items.reduce((itemSum, item) => {
+        const product = products.find(p => p.id === item.productId);
+        return itemSum + ((product?.costPrice || 0) * item.qty);
+      }, 0);
+    }, 0);
+    const profit = revenue - cost;
+    return { revenue, cost, profit, margin: revenue > 0 ? (profit / revenue) * 100 : 0 };
+  }, [filteredSales, products]);
 
-  // Top products report
-  const productReport = useMemo(() => {
-    const counts = {};
+  // Supplier Performance Data
+  const supplierReport = useMemo(() => {
+    const stats = {};
+    suppliers.forEach(s => stats[s.id] = { name: s.name, itemsSold: 0, revenue: 0, cost: 0, profit: 0 });
+    
     filteredSales.forEach(sale => {
       sale.items.forEach(item => {
-        if (!counts[item.productId]) counts[item.productId] = { qty: 0, revenue: 0, name: item.productName };
-        counts[item.productId].qty     += item.qty;
-        counts[item.productId].revenue += item.subtotal;
+        const product = products.find(p => p.id === item.productId);
+        if (product && stats[product.supplierId]) {
+          const s = stats[product.supplierId];
+          const cost = (product.costPrice || 0) * item.qty;
+          s.itemsSold += item.qty;
+          s.revenue   += item.subtotal;
+          s.cost      += cost;
+          s.profit    += (item.subtotal - cost);
+        }
       });
     });
-    return Object.entries(counts)
-      .map(([id, data]) => ({ id, ...data }))
-      .sort((a, b) => b.revenue - a.revenue);
-  }, [filteredSales]);
+    return Object.values(stats).sort((a, b) => b.revenue - a.revenue);
+  }, [filteredSales, products, suppliers]);
 
   const totalRevenue = filteredSales.reduce((sum, s) => sum + s.total, 0);
   const cashSales    = filteredSales.filter(s => s.paymentMethod === 'cash');
@@ -64,15 +72,36 @@ export default function Reports() {
   const downloadSalesReport = () => {
     downloadCSV(
       `nova-sales-${selectedDays}days.csv`,
-      ['Sale ID', 'Date', 'Items', 'Payment Method', 'Amount Paid', 'Change', 'Total'],
-      filteredSales.map(s => [
-        s.id,
-        new Date(s.date).toLocaleString(),
-        s.items.map(i => `${i.productName} x${i.qty}`).join('; '),
-        s.paymentMethod === 'mobile_money' ? 'Mobile Money' : 'Cash',
-        `GH₵${s.amountPaid.toFixed(2)}`,
-        `GH₵${s.change.toFixed(2)}`,
-        `GH₵${s.total.toFixed(2)}`,
+      ['Sale ID', 'Date', 'Items', 'Payment Method', 'Revenue', 'Cost', 'Profit'],
+      filteredSales.map(s => {
+        const cost = s.items.reduce((sum, item) => {
+          const p = products.find(p => p.id === item.productId);
+          return sum + ((p?.costPrice || 0) * item.qty);
+        }, 0);
+        return [
+          s.id,
+          new Date(s.date).toLocaleString(),
+          s.items.map(i => `${i.productName} x${i.qty}`).join('; '),
+          s.paymentMethod === 'mobile_money' ? 'Mobile Money' : 'Cash',
+          s.total.toFixed(2),
+          cost.toFixed(2),
+          (s.total - cost).toFixed(2),
+        ];
+      })
+    );
+  };
+
+  const downloadSupplierReport = () => {
+    downloadCSV(
+      'nova-supplier-performance.csv',
+      ['Supplier', 'Items Sold', 'Revenue (GH₵)', 'Cost (GH₵)', 'Profit (GH₵)', 'Margin (%)'],
+      supplierReport.map(s => [
+        s.name,
+        s.itemsSold,
+        s.revenue.toFixed(2),
+        s.cost.toFixed(2),
+        s.profit.toFixed(2),
+        s.revenue > 0 ? ((s.profit / s.revenue) * 100).toFixed(1) : '0',
       ])
     );
   };
@@ -99,15 +128,21 @@ export default function Reports() {
   const downloadProductReport = () => {
     downloadCSV(
       `nova-products-${selectedDays}days.csv`,
-      ['Product', 'Units Sold', 'Revenue (GH₵)'],
-      productReport.map(p => [p.name, p.qty, p.revenue.toFixed(2)])
+      ['Product', 'Units Sold', 'Revenue (GH₵)', 'Cost (GH₵)', 'Profit (GH₵)'],
+      productReport.map(p => {
+        const product = products.find(item => item.id === p.id);
+        const cost = (product?.costPrice || 0) * p.qty;
+        return [p.name, p.qty, p.revenue.toFixed(2), cost.toFixed(2), (p.revenue - cost).toFixed(2)];
+      })
     );
   };
 
   const REPORT_TABS = [
     { id: 'sales',    label: 'Sales Report',   icon: ShoppingBag },
-    { id: 'restock',  label: 'Restock Report', icon: Truck       },
-    { id: 'products', label: 'Product Report', icon: Package     },
+    { id: 'pl',       label: 'Profit & Loss',  icon: FileText    },
+    { id: 'suppliers',label: 'Suppliers',      icon: Truck       },
+    { id: 'restock',  label: 'Restock',        icon: Package     },
+    { id: 'products', label: 'Products',       icon: TrendingUp  },
   ];
 
   return (
@@ -170,6 +205,7 @@ export default function Reports() {
                       <th>Date & Time</th>
                       <th>Products</th>
                       <th>Payment</th>
+                      <th>Cashier</th>
                       <th>Change</th>
                       <th>Total</th>
                     </tr>
@@ -190,6 +226,7 @@ export default function Reports() {
                             {sale.paymentMethod === 'mobile_money' ? 'Mobile Money' : 'Cash'}
                           </span>
                         </td>
+                        <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{sale.cashierName || 'System'}</td>
                         <td style={{ color: 'var(--text-muted)' }}>GH₵ {sale.change.toFixed(2)}</td>
                         <td style={{ fontWeight: 600 }}>GH₵ {sale.total.toFixed(2)}</td>
                       </tr>
@@ -198,6 +235,87 @@ export default function Reports() {
                 </table>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── PROFIT & LOSS ── */}
+      {activeReport === 'pl' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
+            <div className="card" style={{ borderTop: '4px solid var(--primary)' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.5rem' }}>Total Revenue</p>
+              <h2 style={{ fontSize: '2rem' }}>GH₵ {plData.revenue.toFixed(2)}</h2>
+            </div>
+            <div className="card" style={{ borderTop: '4px solid var(--danger)' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.5rem' }}>Total Cost of Sales</p>
+              <h2 style={{ fontSize: '2rem' }}>GH₵ {plData.cost.toFixed(2)}</h2>
+            </div>
+            <div className="card" style={{ borderTop: '4px solid var(--success)' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.5rem' }}>Gross Profit</p>
+              <h2 style={{ fontSize: '2rem', color: 'var(--success)' }}>GH₵ {plData.profit.toFixed(2)}</h2>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Margin: {plData.margin.toFixed(1)}%</p>
+            </div>
+          </div>
+
+          <div className="card">
+            <h3>P&L Summary — Last {selectedDays} Days</h3>
+            <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div className="flex justify-between" style={{ padding: '1rem', background: 'var(--background)', borderRadius: 'var(--radius-md)' }}>
+                <span>Sales Revenue</span>
+                <span style={{ fontWeight: 600 }}>GH₵ {plData.revenue.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between" style={{ padding: '1rem', background: 'var(--background)', borderRadius: 'var(--radius-md)' }}>
+                <span>Cost of Goods Sold (COGS)</span>
+                <span style={{ fontWeight: 600, color: 'var(--danger)' }}>- GH₵ {plData.cost.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between" style={{ padding: '1rem', background: 'var(--primary-light)', borderRadius: 'var(--radius-md)', color: 'white' }}>
+                <span style={{ fontWeight: 700 }}>Gross Profit</span>
+                <span style={{ fontWeight: 700 }}>GH₵ {plData.profit.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SUPPLIER PERFORMANCE ── */}
+      {activeReport === 'suppliers' && (
+        <div className="card">
+          <div className="flex justify-between items-center" style={{ marginBottom: '1.25rem' }}>
+            <h3>Supplier Performance</h3>
+            <button className="btn btn-secondary btn-sm" onClick={downloadSupplierReport}>
+              <Download size={15} /> Export CSV
+            </button>
+          </div>
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Supplier</th>
+                  <th>Items Sold</th>
+                  <th>Revenue</th>
+                  <th>Cost</th>
+                  <th>Profit</th>
+                  <th>Margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {supplierReport.map(s => (
+                  <tr key={s.name}>
+                    <td style={{ fontWeight: 600 }}>{s.name}</td>
+                    <td>{s.itemsSold}</td>
+                    <td>GH₵ {s.revenue.toFixed(2)}</td>
+                    <td style={{ color: 'var(--text-muted)' }}>GH₵ {s.cost.toFixed(2)}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--success)' }}>GH₵ {s.profit.toFixed(2)}</td>
+                    <td>
+                      <span className="badge badge-primary">
+                        {s.revenue > 0 ? ((s.profit / s.revenue) * 100).toFixed(1) : 0}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -289,12 +407,15 @@ export default function Reports() {
                     <th>Product</th>
                     <th>Units Sold</th>
                     <th>Revenue</th>
+                    <th>Profit</th>
                     <th>Current Stock</th>
                   </tr>
                 </thead>
                 <tbody>
                   {productReport.map((p, i) => {
                     const inv = inventory.find(inv => inv.productId === p.id);
+                    const product = products.find(item => item.id === p.id);
+                    const cost = (product?.costPrice || 0) * p.qty;
                     const stock = inv ? inv.quantity : 0;
                     const isLow = inv && stock <= inv.lowStockThreshold;
                     return (
@@ -303,6 +424,7 @@ export default function Reports() {
                         <td style={{ fontWeight: 500 }}>{p.name}</td>
                         <td>{p.qty}</td>
                         <td style={{ fontWeight: 600 }}>GH₵ {p.revenue.toFixed(2)}</td>
+                        <td style={{ color: 'var(--success)', fontWeight: 600 }}>GH₵ {(p.revenue - cost).toFixed(2)}</td>
                         <td>
                           <span className={`badge ${isLow ? 'badge-danger' : 'badge-success'}`}>
                             {stock} {isLow ? '⚠ Low' : 'in stock'}

@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, ShoppingCart, Package, Boxes,
-  Truck, BarChart2, FileText, LogOut, Baby
+  Truck, BarChart2, FileText, LogOut, Baby, Users
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: '/suppliers', label: 'Suppliers',  icon: Truck,         roles: ['owner'] },
   { to: '/analytics', label: 'Analytics',  icon: BarChart2,     roles: ['owner'] },
   { to: '/reports',   label: 'Reports',    icon: FileText,      roles: ['owner'] },
+  { to: '/staff',     label: 'Staff Management', icon: Users,      roles: ['owner'] },
 ];
 
 export default function Sidebar() {

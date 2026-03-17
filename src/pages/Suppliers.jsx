@@ -1,11 +1,16 @@
 import { useState } from 'react';
-import { PackagePlus, Truck, X } from 'lucide-react';
+import { PackagePlus, Truck, X, Plus, Edit2, Trash2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
+const EMPTY_SUPPLIER = { name: '', contact: '', phone: '', email: '', address: '' };
+
 export default function Suppliers() {
-  const { suppliers, products, inventory, updateStock } = useApp();
+  const { suppliers, products, inventory, updateStock, addSupplier, updateSupplier, deleteSupplier } = useApp();
 
   const [restockModal, setRestockModal] = useState({ open: false, product: null, qty: 10 });
+  const [supplierModal, setSupplierModal] = useState({ open: false, editingId: null });
+  const [formData, setFormData] = useState(EMPTY_SUPPLIER);
+  const [confirmDelete, setConfirmDelete] = useState(null); // supplier id
 
   // Get stock quantity for a product
   const getStock = (productId) => {
@@ -26,10 +31,33 @@ export default function Suppliers() {
     setRestockModal({ open: false, product: null, qty: 10 });
   };
 
+  const openAddSupplier = () => {
+    setFormData(EMPTY_SUPPLIER);
+    setSupplierModal({ open: true, editingId: null });
+  };
+
+  const openEditSupplier = (s) => {
+    setFormData({ name: s.name, contact: s.contact, phone: s.phone, email: s.email, address: s.address });
+    setSupplierModal({ open: true, editingId: s.id });
+  };
+
+  const handleSupplierSubmit = async (e) => {
+    e.preventDefault();
+    if (supplierModal.editingId) {
+      await updateSupplier(supplierModal.editingId, formData);
+    } else {
+      await addSupplier(formData);
+    }
+    setSupplierModal({ open: false, editingId: null });
+  };
+
   return (
     <div className="page-container">
-      <div className="page-header">
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>Restock Management</h2>
+        <button className="btn btn-primary" onClick={openAddSupplier}>
+          <Plus size={17} /> Add Supplier
+        </button>
       </div>
 
       <div className="suppliers-layout flex gap-4" style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -81,6 +109,7 @@ export default function Suppliers() {
                     <th>Phone</th>
                     <th>Email</th>
                     <th>Location</th>
+                    <th style={{ textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -91,6 +120,16 @@ export default function Suppliers() {
                       <td style={{ color: 'var(--text-muted)' }}>{s.phone}</td>
                       <td style={{ color: 'var(--text-muted)' }}>{s.email}</td>
                       <td style={{ color: 'var(--text-muted)' }}>{s.address}</td>
+                      <td>
+                        <div style={{ display: 'flex', justifyContent: 'center', gap: '0.4rem' }}>
+                          <button className="btn btn-secondary btn-sm" onClick={() => openEditSupplier(s)}>
+                            <Edit2 size={14} />
+                          </button>
+                          <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(s.id)}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -126,6 +165,50 @@ export default function Suppliers() {
           </div>
         </div>
       </div>
+
+      {/* Supplier Modal (Add/Edit) */}
+      {supplierModal.open && (
+        <div className="modal-backdrop">
+          <div className="modal" style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <h3>{supplierModal.editingId ? 'Edit Supplier' : 'Add New Supplier'}</h3>
+              <button className="modal-close-btn" onClick={() => setSupplierModal({ open: false, editingId: null })}>
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleSupplierSubmit}>
+              <div className="modal-body">
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="input-group" style={{ gridColumn: 'span 2' }}>
+                    <label>Supplier Name *</label>
+                    <input required className="input" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                  </div>
+                  <div className="input-group">
+                    <label>Contact Person</label>
+                    <input className="input" value={formData.contact} onChange={e => setFormData({ ...formData, contact: e.target.value })} />
+                  </div>
+                  <div className="input-group">
+                    <label>Phone Number</label>
+                    <input className="input" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} />
+                  </div>
+                  <div className="input-group" style={{ gridColumn: 'span 2' }}>
+                    <label>Email Address</label>
+                    <input type="email" className="input" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+                  </div>
+                  <div className="input-group" style={{ gridColumn: 'span 2' }}>
+                    <label>Address / Location</label>
+                    <input className="input" value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setSupplierModal({ open: false, editingId: null })}>Cancel</button>
+                <button type="submit" className="btn btn-primary">{supplierModal.editingId ? 'Save Changes' : 'Add Supplier'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Restock Modal */}
       {restockModal.open && (
@@ -169,6 +252,26 @@ export default function Suppliers() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {confirmDelete && (
+        <div className="modal-backdrop">
+          <div className="modal" style={{ maxWidth: 380 }}>
+            <div className="modal-header">
+              <h3>Delete Supplier</h3>
+              <button className="modal-close-btn" onClick={() => setConfirmDelete(null)}><X size={18} /></button>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to delete this supplier?</p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Existing products linked to this supplier will remain but their supplier reference will be broken.</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>Cancel</button>
+              <button className="btn btn-danger" onClick={() => { deleteSupplier(confirmDelete); setConfirmDelete(null); }}>Delete</button>
+            </div>
           </div>
         </div>
       )}

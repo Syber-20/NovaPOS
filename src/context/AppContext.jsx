@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { 
   onAuthStateChanged, 
   signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
   signInWithPopup,
   signOut 
 } from 'firebase/auth';
@@ -9,6 +10,7 @@ import {
   collection, 
   onSnapshot, 
   query, 
+  where,
   orderBy, 
   doc, 
   getDoc, 
@@ -61,7 +63,6 @@ const SEED_USERS = [
   { id:'u3', name:'Kofi Boateng',   email:'kofi@novapos.com',     role:'inventory',pin:'9012' },
 ];
 
-// Realistic sale records seed
 function buildSeedSales() {
   const sales = [];
   const now = new Date();
@@ -91,26 +92,21 @@ function buildSeedSales() {
   return sales;
 }
 
-// ── Firestore Seed Utility ──────────────────────────────────────────────────
 export async function seedFirestore() {
   const productsSnap = await getDocs(collection(db, 'products'));
   if (productsSnap.empty) {
-    // Seed Products
     for (const p of SEED_PRODUCTS) {
       const { id, ...data } = p;
       await setDoc(doc(db, 'products', id), data);
     }
-    // Seed Inventory
     for (const i of SEED_INVENTORY) {
       const { id, ...data } = i;
       await setDoc(doc(db, 'inventory', id), data);
     }
-    // Seed Suppliers
     for (const s of SEED_SUPPLIERS) {
       const { id, ...data } = s;
       await setDoc(doc(db, 'suppliers', id), data);
     }
-    // Seed Sales (Historical)
     const sales = buildSeedSales();
     for (const s of sales) {
       const { id, ...data } = s;
@@ -119,7 +115,6 @@ export async function seedFirestore() {
   }
 }
 
-// ── Provider ──────────────────────────────────────────────────────────────────
 export function AppProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [products,    setProducts]    = useState([]);
@@ -130,18 +125,14 @@ export function AppProvider({ children }) {
   const [isLoading,   setIsLoading]   = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Sync Auth
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        // Fetch user role from Firestore
         const userDocRef = doc(db, 'users', user.uid);
         const userDoc = await getDoc(userDocRef);
-        
         if (userDoc.exists()) {
           setCurrentUser({ uid: user.uid, ...userDoc.data() });
         } else {
-          // New user logic - create default role in Firestore
           const newUser = { 
             name: user.displayName || user.email.split('@')[0],
             email: user.email, 
@@ -158,46 +149,59 @@ export function AppProvider({ children }) {
     return () => unsubscribe();
   }, []);
 
-  // Sync Data (Firestore)
   useEffect(() => {
     if (!currentUser) return;
-
     const unsubProducts = onSnapshot(collection(db, 'products'), (snap) => {
       setProducts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
-
     const unsubInventory = onSnapshot(collection(db, 'inventory'), (snap) => {
       setInventory(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
-
     const unsubSuppliers = onSnapshot(collection(db, 'suppliers'), (snap) => {
       setSuppliers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
-
     const salesQuery = query(collection(db, 'sales'), orderBy('date', 'desc'));
     const unsubSales = onSnapshot(salesQuery, (snap) => {
       setSales(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
-
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+      setUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
     return () => {
-      unsubProducts();
-      unsubInventory();
-      unsubSuppliers();
-      unsubSales();
+      unsubProducts(); unsubInventory(); unsubSuppliers(); unsubSales(); unsubUsers();
     };
   }, [currentUser]);
 
-  // ── Auth ────────────────────────────────────────────────────────────────────
   const login = useCallback(async (email, pin) => {
     try {
-      // For MVP, we still allow PIN login but it should check against Firestore users
-      // OR use a standard password flow. For now, since PINs are stored as plain text 
-      // in the requirement, we'll keep it simple: find user with this email and pin.
-      // NOTE: In production, use Firebase Auth passwords.
-      const result = await signInWithEmailAndPassword(auth, email, pin + "novapos_secret"); 
-      return { ok: true };
+      const authEmail = email.trim().toLowerCase();
+      const password = pin + "novapos_secret"; 
+      try {
+        await signInWithEmailAndPassword(auth, authEmail, password); 
+        return { ok: true };
+      } catch (authError) {
+        if (authError.code === 'auth/user-not-found' || authError.code === 'auth/invalid-credential') {
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('email', '==', authEmail));
+          const querySnapshot = await getDocs(q);
+          if (!querySnapshot.empty) {
+            const userDoc = querySnapshot.docs[0];
+            const userData = userDoc.data();
+            if (userData.pin === pin) {
+              await createUserWithEmailAndPassword(auth, authEmail, password);
+              await signInWithEmailAndPassword(auth, authEmail, password);
+              return { ok: true };
+            }
+          }
+        }
+        throw authError;
+      }
     } catch (error) {
-      return { ok: false, error: 'Invalid email or PIN.' };
+      console.error("Login Error:", error.code, error.message);
+      let message = 'Invalid email or PIN.';
+      if (error.code === 'auth/user-disabled') message = 'This account has been disabled.';
+      if (error.code === 'auth/too-many-requests') message = 'Too many attempts. Please try again later.';
+      return { ok: false, error: message };
     }
   }, []);
 
@@ -206,26 +210,54 @@ export function AppProvider({ children }) {
       const result = await signInWithPopup(auth, googleProvider);
       return { ok: true, user: result.user };
     } catch (error) {
-      return { ok: false, error: error.message };
+      console.error("Google Auth Error:", error.code, error.message);
+      let message = 'Google login failed.';
+      if (error.code === 'auth/operation-not-allowed') {
+        message = 'Google Sign-In is not enabled in the Firebase Console.';
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        message = 'Login popup was closed before completion.';
+      } else if (error.code === 'auth/unauthorized-domain') {
+        message = 'This domain is not authorized for Google Sign-In.';
+      }
+      return { ok: false, error: message };
+    }
+  }, []);
+
+  const signup = useCallback(async (name, email, pin) => {
+    try {
+      const authEmail = email.trim().toLowerCase();
+      const password = pin + "novapos_secret";
+      const userCredential = await createUserWithEmailAndPassword(auth, authEmail, password);
+      const user = userCredential.user;
+      const userData = {
+        name: name.trim(),
+        email: authEmail,
+        role: 'customer',
+        pin: pin,
+        createdAt: serverTimestamp()
+      };
+      await setDoc(doc(db, 'users', user.uid), userData);
+      setCurrentUser({ uid: user.uid, ...userData });
+      return { ok: true };
+    } catch (error) {
+      console.error("Signup Error:", error.code, error.message);
+      let message = 'Signup failed.';
+      if (error.code === 'auth/email-already-in-use') message = 'This email is already registered.';
+      if (error.code === 'auth/weak-password') message = 'The PIN is too short.';
+      if (error.code === 'auth/invalid-email') message = 'Invalid email address.';
+      return { ok: false, error: message };
     }
   }, []);
 
   const logout = useCallback(() => signOut(auth).then(() => setCurrentUser(null)), []);
 
-  // ── Products ────────────────────────────────────────────────────────────────
   const addProduct = useCallback(async (product) => {
     const newId = `p${Date.now()}`;
     const newProduct = { ...product, id: newId };
     await setDoc(doc(db, 'products', newId), newProduct);
-    
-    // auto-create inventory row
     const inventoryId = `i${Date.now()}`;
     await setDoc(doc(db, 'inventory', inventoryId), { 
-      id: inventoryId, 
-      productId: newId, 
-      quantity: 0, 
-      lowStockThreshold: 10, 
-      expiryDate: null 
+      id: inventoryId, productId: newId, quantity: 0, lowStockThreshold: 10, expiryDate: null 
     });
     return newProduct;
   }, []);
@@ -236,12 +268,10 @@ export function AppProvider({ children }) {
 
   const deleteProduct = useCallback(async (id) => {
     await deleteDoc(doc(db, 'products', id));
-    // Also remove from inventory
     const item = inventory.find(i => i.productId === id);
     if (item) await deleteDoc(doc(db, 'inventory', item.id));
   }, [inventory]);
 
-  // ── Inventory ───────────────────────────────────────────────────────────────
   const updateStock = useCallback(async (productId, newQuantity, threshold, expiryDate) => {
     const item = inventory.find(i => i.productId === productId);
     if (item) {
@@ -258,12 +288,10 @@ export function AppProvider({ children }) {
 
   const getLowStockItems = useCallback(() => {
     return inventory.filter(i => i.quantity <= i.lowStockThreshold).map(i => ({
-      ...i,
-      product: products.find(p => p.id === i.productId),
+      ...i, product: products.find(p => p.id === i.productId),
     }));
   }, [inventory, products]);
 
-  // ── Sales ───────────────────────────────────────────────────────────────────
   const processSale = useCallback(async (cartItems, paymentMethod, amountPaid) => {
     const total = cartItems.reduce((sum, item) => sum + item.subtotal, 0);
     const change = amountPaid - total;
@@ -272,17 +300,13 @@ export function AppProvider({ children }) {
       id: saleId,
       date: new Date().toISOString(),
       cashierId: currentUser?.uid || 'u2',
-      items: cartItems,
-      total,
-      paymentMethod,
-      amountPaid,
-      change,
-      status: 'completed',
+      items: cartItems.map(item => {
+        const product = products.find(p => p.id === item.productId);
+        return { ...item, costPrice: product?.costPrice || 0 };
+      }),
+      total, paymentMethod, amountPaid, change, status: 'completed',
     };
-    
     await setDoc(doc(db, 'sales', saleId), newSale);
-
-    // Deduct from inventory
     for (const item of cartItems) {
       const invItem = inventory.find(i => i.productId === item.productId);
       if (invItem) {
@@ -292,9 +316,8 @@ export function AppProvider({ children }) {
       }
     }
     return newSale;
-  }, [currentUser, inventory]);
+  }, [currentUser, inventory, products]);
 
-  // ── Suppliers ───────────────────────────────────────────────────────────────
   const addSupplier = useCallback(async (supplier) => {
     const id = `s${Date.now()}`;
     const newSupplier = { ...supplier, id };
@@ -310,7 +333,14 @@ export function AppProvider({ children }) {
     await deleteDoc(doc(db, 'suppliers', id));
   }, []);
 
-  // ── Analytics helpers ────────────────────────────────────────────────────────
+  const updateUserRole = useCallback(async (uid, newRole) => {
+    await updateDoc(doc(db, 'users', uid), { role: newRole });
+  }, []);
+
+  const deleteUser = useCallback(async (uid) => {
+    await deleteDoc(doc(db, 'users', uid));
+  }, []);
+
   const getSalesByDateRange = useCallback((days = 7) => {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
@@ -338,21 +368,14 @@ export function AppProvider({ children }) {
   }, [getSalesByDateRange, products]);
 
   const value = {
-    // Auth
-    currentUser, login, loginWithGoogle, logout, isLoading,
-    // UI
+    currentUser, login, signup, loginWithGoogle, logout, isLoading,
     sidebarOpen, setSidebarOpen,
-    // Data
     products, inventory, suppliers, sales, users,
-    // Product actions
     addProduct, updateProduct, deleteProduct,
-    // Inventory actions
     updateStock, getStockForProduct, getLowStockItems,
-    // Sale actions
     processSale,
-    // Supplier actions
     addSupplier, updateSupplier, deleteSupplier,
-    // Analytics
+    updateUserRole, deleteUser,
     getSalesByDateRange, getTodaySales, getTopProducts,
   };
 

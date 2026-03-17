@@ -35,6 +35,15 @@ export default function Analytics() {
 
   const maxRevenue   = Math.max(...dailyData.map(d => d.revenue), 1);
   const totalRevenue = filteredSales.reduce((sum, s) => sum + s.total, 0);
+  const totalCost    = filteredSales.reduce((sum, s) => {
+    return sum + s.items.reduce((itemSum, item) => {
+      const product = products.find(p => p.id === item.productId);
+      return itemSum + ((product?.costPrice || 0) * item.qty);
+    }, 0);
+  }, 0);
+  const totalProfit  = totalRevenue - totalCost;
+  const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
   const totalOrders  = filteredSales.length;
   const avgOrder     = totalOrders > 0 ? totalRevenue / totalOrders : 0;
   const totalItems   = filteredSales.reduce((s, sale) => s + sale.items.reduce((a, i) => a + i.qty, 0), 0);
@@ -43,16 +52,19 @@ export default function Analytics() {
     const counts = {};
     filteredSales.forEach(sale => {
       sale.items.forEach(item => {
-        if (!counts[item.productId]) counts[item.productId] = { qty: 0, revenue: 0, name: item.productName };
+        if (!counts[item.productId]) counts[item.productId] = { qty: 0, revenue: 0, profit: 0, name: item.productName };
+        const product = products.find(p => p.id === item.productId);
+        const cost = (product?.costPrice || 0) * item.qty;
         counts[item.productId].qty     += item.qty;
         counts[item.productId].revenue += item.subtotal;
+        counts[item.productId].profit  += (item.subtotal - cost);
       });
     });
     return Object.entries(counts)
       .map(([productId, data]) => ({ productId, ...data }))
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 5);
-  }, [filteredSales]);
+  }, [filteredSales, products]);
 
   const maxQty        = Math.max(...topProducts.map(p => p.qty), 1);
   const cashSales     = filteredSales.filter(s => s.paymentMethod === 'cash');
@@ -74,10 +86,11 @@ export default function Analytics() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
         <StatCard icon={<DollarSign size={20} />} iconBg="var(--success-light)" iconColor="var(--success)" label="Total Revenue" value={`GH₵ ${totalRevenue.toFixed(2)}`} />
+        <StatCard icon={<TrendingUp size={20} />} iconBg="rgba(16, 185, 129, 0.1)" iconColor="#10b981" label="Total Profit" value={`GH₵ ${totalProfit.toFixed(2)}`} />
+        <StatCard icon={<TrendingUp size={20} />} iconBg="rgba(59, 130, 246, 0.1)" iconColor="#3b82f6" label="Profit Margin" value={`${profitMargin.toFixed(1)}%`} />
         <StatCard icon={<ShoppingBag size={20} />} iconBg="rgba(79,70,229,0.1)" iconColor="var(--primary)" label="Total Orders" value={totalOrders} />
-        <StatCard icon={<TrendingUp size={20} />} iconBg="var(--warning-light)" iconColor="var(--warning)" label="Avg. Order Value" value={`GH₵ ${avgOrder.toFixed(2)}`} />
         <StatCard icon={<Package size={20} />} iconBg="var(--danger-light)" iconColor="var(--danger)" label="Items Sold" value={totalItems} />
       </div>
 
@@ -126,7 +139,7 @@ export default function Analytics() {
                 <div key={p.productId}>
                   <div className="flex justify-between items-center" style={{ marginBottom: '0.3rem' }}>
                     <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{i + 1}. {p.name}</span>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{p.qty} sold · GH₵{p.revenue.toFixed(2)}</span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{p.qty} sold · GH₵{p.revenue.toFixed(2)} rev · <span style={{ color: 'var(--success)', fontWeight: 600 }}>₵{p.profit.toFixed(2)} profit</span></span>
                   </div>
                   <div style={{ height: 8, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
                     <div style={{ height: '100%', width: `${(p.qty / maxQty) * 100}%`, background: 'linear-gradient(90deg, var(--primary), var(--primary-light))', borderRadius: 99 }} />
@@ -174,7 +187,7 @@ export default function Analytics() {
           <div className="table-wrapper">
             <table className="data-table">
               <thead>
-                <tr><th>ID</th><th>Date</th><th>Items</th><th>Payment</th><th>Total</th></tr>
+                <tr><th>ID</th><th>Date</th><th>Items</th><th>Payment</th><th>Cashier</th><th>Total</th></tr>
               </thead>
               <tbody>
                 {[...filteredSales].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 20).map(sale => (
@@ -186,6 +199,7 @@ export default function Analytics() {
                     </td>
                     <td>{sale.items.reduce((s, i) => s + i.qty, 0)} items</td>
                     <td><span className={`badge ${sale.paymentMethod === 'cash' ? 'badge-success' : 'badge-primary'}`}>{sale.paymentMethod === 'mobile_money' ? 'Mobile Money' : 'Cash'}</span></td>
+                    <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{sale.cashierName || 'System'}</td>
                     <td style={{ fontWeight: 600 }}>GH₵ {sale.total.toFixed(2)}</td>
                   </tr>
                 ))}

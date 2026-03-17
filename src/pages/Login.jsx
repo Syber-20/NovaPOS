@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Baby, Eye, EyeOff, LogIn } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 export default function Login() {
+  console.log("Login Page Rendering...");
   const { login, loginWithGoogle } = useApp();
   const navigate  = useNavigate();
 
@@ -148,6 +149,15 @@ export default function Login() {
               {loading ? 'Signing in…' : <><LogIn size={17} /> Sign In</>}
             </button>
           </form>
+
+          <div style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.9rem' }}>
+            <p style={{ color: 'var(--text-muted)' }}>
+              Don't have an account?{' '}
+              <Link to="/signup" style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}>
+                Sign Up
+              </Link>
+            </p>
+          </div>
         </div>
 
         {/* Demo credentials hint */}
