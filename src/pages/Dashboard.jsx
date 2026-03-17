@@ -1,10 +1,14 @@
 import { useNavigate } from 'react-router-dom';
 import { DollarSign, ShoppingBag, PackageOpen, TrendingUp } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import InventoryDashboard from './InventoryDashboard';
 
 export default function Dashboard() {
-  const { getTodaySales, getTopProducts, getLowStockItems, sales } = useApp();
+  const { currentUser, getTodaySales, getTopProducts, getLowStockItems, sales } = useApp();
   const navigate = useNavigate();
+
+  // Show role-specific dashboard
+  if (currentUser?.role === 'inventory') return <InventoryDashboard />;
 
   const todaySales    = getTodaySales();
   const todayRevenue  = todaySales.reduce((sum, s) => sum + s.total, 0);
@@ -12,7 +16,6 @@ export default function Dashboard() {
   const topProducts   = getTopProducts(7, 1);
   const topProduct    = topProducts.length > 0 ? topProducts[0].product.name : 'None';
 
-  // Recent 5 sales
   const recentSales = [...sales]
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, 5);
@@ -27,7 +30,6 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* Low stock alert banner */}
       {lowStockItems.length > 0 && (
         <div className="alert-banner warning" style={{ marginBottom: '1.5rem' }}>
           <PackageOpen size={18} />
@@ -44,7 +46,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Stat Cards */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
@@ -88,14 +89,10 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Recent Transactions */}
       <div className="card">
         <div className="flex justify-between items-center" style={{ marginBottom: '1.25rem' }}>
           <h3>Recent Transactions</h3>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => navigate('/analytics')}
-          >
+          <button className="btn btn-secondary btn-sm" onClick={() => navigate('/analytics')}>
             View All
           </button>
         </div>
@@ -121,16 +118,12 @@ export default function Dashboard() {
               <tbody>
                 {recentSales.map(sale => (
                   <tr key={sale.id}>
-                    <td style={{ fontWeight: 500, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                      #{sale.id}
-                    </td>
+                    <td style={{ fontWeight: 500, fontSize: '0.85rem', color: 'var(--text-muted)' }}>#{sale.id}</td>
                     <td style={{ color: 'var(--text-muted)' }}>
                       {new Date(sale.date).toLocaleDateString([], { month: 'short', day: 'numeric' })}{' '}
                       {new Date(sale.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
-                    <td>
-                      {sale.items.reduce((s, i) => s + i.qty, 0)} item{sale.items.reduce((s, i) => s + i.qty, 0) !== 1 ? 's' : ''}
-                    </td>
+                    <td>{sale.items.reduce((s, i) => s + i.qty, 0)} item{sale.items.reduce((s, i) => s + i.qty, 0) !== 1 ? 's' : ''}</td>
                     <td>
                       <span className={`badge ${sale.paymentMethod === 'cash' ? 'badge-success' : 'badge-primary'}`}>
                         {sale.paymentMethod === 'mobile_money' ? 'Mobile Money' : 'Cash'}
@@ -160,19 +153,11 @@ function StatCard({ title, value, icon, iconBg, iconColor, trend, trendUp, value
             {value}
           </p>
         </div>
-        <div style={{
-          width: 44, height: 44, borderRadius: 'var(--radius-md)',
-          background: iconBg, color: iconColor,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
+        <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           {icon}
         </div>
       </div>
-      <p style={{
-        fontSize: '0.8rem', fontWeight: 500,
-        color: trendUp === true ? 'var(--success)' : trendUp === false ? 'var(--danger)' : 'var(--text-muted)',
-      }}>
+      <p style={{ fontSize: '0.8rem', fontWeight: 500, color: trendUp === true ? 'var(--success)' : trendUp === false ? 'var(--danger)' : 'var(--text-muted)' }}>
         {trend}
       </p>
     </div>
