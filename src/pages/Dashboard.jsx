@@ -1,7 +1,9 @@
 import { useNavigate } from 'react-router-dom';
 import { DollarSign, ShoppingBag, PackageOpen, TrendingUp } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import CashierDashboard   from './CashierDashboard';
 import InventoryDashboard from './InventoryDashboard';
+import ManagerDashboard from './ManagerDashboard';
 
 export default function Dashboard() {
   const { currentUser, getTodaySales, getTopProducts, getLowStockItems, sales } = useApp();
@@ -9,6 +11,8 @@ export default function Dashboard() {
 
   // Show role-specific dashboard
   if (currentUser?.role === 'inventory') return <InventoryDashboard />;
+  if (currentUser?.role === 'cashier')   return <CashierDashboard />;
+  if (currentUser?.role === 'manager')   return <ManagerDashboard />;
 
   const todaySales    = getTodaySales();
   const todayRevenue  = todaySales.reduce((sum, s) => sum + s.total, 0);

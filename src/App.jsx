@@ -26,11 +26,11 @@ function AppShell() {
         <Header />
         <Routes>
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/pos" element={<ProtectedRoute allowedRoles={['owner','cashier']}><POS /></ProtectedRoute>} />
-          <Route path="/inventory" element={<ProtectedRoute allowedRoles={['owner','inventory']}><Inventory /></ProtectedRoute>} />
+          <Route path="/pos" element={<ProtectedRoute allowedRoles={['owner','cashier','manager']}><POS /></ProtectedRoute>} />
+          <Route path="/inventory" element={<ProtectedRoute allowedRoles={['owner','inventory','manager']}><Inventory /></ProtectedRoute>} />
           <Route path="/products" element={<ProtectedRoute allowedRoles={['owner','inventory']}><Products /></ProtectedRoute>} />
           <Route path="/suppliers" element={<ProtectedRoute allowedRoles={['owner']}><Suppliers /></ProtectedRoute>} />
-          <Route path="/analytics" element={<ProtectedRoute allowedRoles={['owner']}><Analytics /></ProtectedRoute>} />
+          <Route path="/analytics" element={<ProtectedRoute allowedRoles={['owner','manager']}><Analytics /></ProtectedRoute>} />
           <Route path="/reports" element={<ProtectedRoute allowedRoles={['owner']}><Reports /></ProtectedRoute>} />
           <Route path="/staff" element={<ProtectedRoute allowedRoles={['owner']}><Staff /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
